@@ -97,7 +97,7 @@ namespace GrumpyZip
 
 	enum ECompressionMethods
 	{
-		Deflate = 8
+		Deflated = 8
 	};
 	
 	// FILEINZIP 
@@ -146,7 +146,7 @@ namespace GrumpyZip
 				if (m_LocalFileHeader->CompressionMethod != 0)
 				{
 					//Only deflate compression/decompression first
-					if (m_LocalFileHeader->CompressionMethod != ECompressionMethods::Deflate)
+					if (m_LocalFileHeader->CompressionMethod != ECompressionMethods::Deflated)
 					{
 						printf("Compression method [%i] is not supported\n", m_LocalFileHeader->CompressionMethod);
 						return false;
@@ -159,13 +159,16 @@ namespace GrumpyZip
 						//Copy the name..
 						memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 30], m_LocalFileHeader->FileNameLength);
 
-						std::vector<char> compressedData;
+						std::vector<unsigned char> compressedData;
 						compressedData.resize(m_LocalFileHeader->CompressedSize);
 						memset(compressedData.data(), 0, m_LocalFileHeader->CompressedSize);
 
 						memcpy(compressedData.data(),
 							&m_Bigbuffer[m_FileCursorPos + sizeof(LocalZipHeader) + m_LocalFileHeader->ExtraFieldLength + m_LocalFileHeader->FileNameLength],
 							m_LocalFileHeader->CompressedSize);
+
+						for (int i = 0; i < compressedData.size(); i++)
+							printf("0x%X\n", compressedData[i]);
 					}
 				}
 				else
