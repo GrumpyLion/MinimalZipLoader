@@ -4,9 +4,9 @@ void main()
 {
 	GrumpyZip::ZipFile file;
 
-	if (file.LoadZipFile("Test.lol"))
+	if (file.LoadZipFile("Assets.paklol"))
 	{
-		auto temp = file.GetFile("Test.txt");
+		auto temp = file.GetFile("Assets/Shaders/GLSL/Test.fs");
 		printf("%s\n\n\n", temp->Data.data());
 	}	
 }

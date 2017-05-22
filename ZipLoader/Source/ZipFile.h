@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <zlib.h>
+
 //GRUMPYZIP 
 //----------------------------------------------------------
 
@@ -106,7 +108,7 @@ namespace GrumpyZip
 	class FileInZip
 	{
 	public:
-		std::vector<char> Data;
+		std::vector<unsigned char> Data;
 		std::string FileName;
 		unsigned int FileSize;
 
@@ -154,7 +156,7 @@ namespace GrumpyZip
 					else
 					{
 						std::vector<char> tempName;
-						tempName.resize(m_LocalFileHeader->FileNameLength);
+						tempName.resize(m_LocalFileHeader->FileNameLength + 1);
 
 						//Copy the name..
 						memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 30], m_LocalFileHeader->FileNameLength);
@@ -167,8 +169,43 @@ namespace GrumpyZip
 							&m_Bigbuffer[m_FileCursorPos + sizeof(LocalZipHeader) + m_LocalFileHeader->ExtraFieldLength + m_LocalFileHeader->FileNameLength],
 							m_LocalFileHeader->CompressedSize);
 
-						for (int i = 0; i < compressedData.size(); i++)
-							printf("0x%X\n", compressedData[i]);
+						std::vector<unsigned char> decompressedData;
+
+						decompressedData.resize(m_LocalFileHeader->UncompressedSize);
+
+						z_stream stream;
+						stream.zalloc = Z_NULL;
+						stream.zfree = Z_NULL;
+						stream.opaque = Z_NULL;
+						stream.avail_in = 0;
+						stream.next_in = Z_NULL;
+
+						if (int err = inflateInit2(&stream, -MAX_WBITS) != Z_OK)
+						{
+							printf("Error: inflateInit %d\n", err);
+							return false;
+						}
+
+						// Set the starting point and total data size to be read
+						stream.avail_in = (uInt)compressedData.size();
+						stream.next_in = (Bytef*)&compressedData[0];
+
+						stream.next_out = (Bytef*)&decompressedData[0];
+
+						int ret = inflate(&stream, Z_NO_FLUSH);
+
+						if (ret != Z_STREAM_END)
+						{
+							printf("Error: inflate %d\n", ret);
+							return false;
+						}
+
+						auto tempFile = std::make_unique<FileInZip>();
+						tempFile->Data = decompressedData;
+						tempFile->FileName = std::string(tempName.data());
+						tempFile->FileSize = m_LocalFileHeader->UncompressedSize;
+
+						m_FilesInZip.insert({ std::string(tempName.data()), std::move(tempFile) });
 					}
 				}
 				else
@@ -180,7 +217,7 @@ namespace GrumpyZip
 					//Copy the name..
 					memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 30], m_LocalFileHeader->FileNameLength);
 
-					std::vector<char> data;
+					std::vector<unsigned char> data;
 					data.resize(m_LocalFileHeader->CompressedSize + 1);
 					memset(data.data(), 0, m_LocalFileHeader->CompressedSize);
 
