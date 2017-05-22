@@ -6,7 +6,7 @@ void main()
 
 	if (file.LoadZipFile("Assets.paklol"))
 	{
-		auto temp = file.GetFile("Assets/Shaders/GLSL/Test.fs");
-		printf("%s\n\n\n", temp->Data.data());
+		auto temp = file.GetFile("Assets/Shaders/GLSL/Terrain.fs");
+		printf("%s\n", temp->Data.data());
 	}	
 }

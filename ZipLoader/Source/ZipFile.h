@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <zlib.h>
+#include "zlib.h"
 
 //GRUMPYZIP 
 //----------------------------------------------------------
@@ -101,7 +101,7 @@ namespace GrumpyZip
 	{
 		Deflated = 8
 	};
-	
+
 	// FILEINZIP 
 	//----------------------------------------------------------
 
@@ -171,7 +171,7 @@ namespace GrumpyZip
 
 						std::vector<unsigned char> decompressedData;
 
-						decompressedData.resize(m_LocalFileHeader->UncompressedSize);
+						decompressedData.resize(m_LocalFileHeader->UncompressedSize + 1);
 
 						z_stream stream;
 						stream.zalloc = Z_NULL;
@@ -266,86 +266,86 @@ namespace GrumpyZip
 			return true;
 		}
 
-		public:
-		
-			//Loads a zip file from the given location
-			bool LoadZipFile(std::string a_FileLocation)
+	public:
+
+		//Loads a zip file from the given location
+		bool LoadZipFile(std::string a_FileLocation)
+		{
+			//Open the file
+			std::ifstream file(a_FileLocation, std::ios::ate | std::ifstream::binary);
+			if (!file)
 			{
-				//Open the file
-				std::ifstream file(a_FileLocation, std::ios::ate | std::ifstream::binary);
-				if (!file)
+				printf("Error file not found\n");
+				return false;
+			}
+
+			//Get the file size
+			CompleteFileSize = (int)file.tellg();
+			if (CompleteFileSize == 0)
+			{
+				printf("Error filesize is zero\n");
+				return false;
+			}
+
+			//Reset the file pointer to 0
+			file.seekg(0);
+
+			//Take a big buffer for loading everything
+			m_Bigbuffer.resize(CompleteFileSize);
+			memset(m_Bigbuffer.data(), 0, CompleteFileSize);
+
+			file.read(m_Bigbuffer.data(), CompleteFileSize);
+
+			while (m_FileCursorPos < CompleteFileSize)
+			{
+				//TODO find another way than this
+				HeaderSignature *signature = (HeaderSignature*)&m_Bigbuffer[m_FileCursorPos];
+
+				switch (signature->Signature)
 				{
-					printf("Error file not found\n");
-					return false;
-				}
-
-				//Get the file size
-				CompleteFileSize = (int)file.tellg();
-				if (CompleteFileSize == 0)
+				case 0x04034b50: //Local file header
 				{
-					printf("Error filesize is zero\n");
-					return false;
-				}
-
-				//Reset the file pointer to 0
-				file.seekg(0);
-
-				//Take a big buffer for loading everything
-				m_Bigbuffer.resize(CompleteFileSize);
-				memset(m_Bigbuffer.data(), 0, CompleteFileSize);
-
-				file.read(m_Bigbuffer.data(), CompleteFileSize);
-
-				while (m_FileCursorPos < CompleteFileSize)
-				{
-					//TODO find another way than this
-					HeaderSignature *signature = (HeaderSignature*)&m_Bigbuffer[m_FileCursorPos];
-
-					switch (signature->Signature)
-					{
-					case 0x04034b50: //Local file header
-					{
-						if (!LoadLocalFileHeader())
-							return false;
-						break;
-					}
-
-					case 0x02014b50: //Central directory file header
-					{
-						if (!LoadCentralDirectoryFileHeader())
-							return false;
-						break;
-					}
-
-					case 0x06054b50: //End of file header
-						if (!LoadEnd())
-							return false;
-						break;
-
-					default:
+					if (!LoadLocalFileHeader())
 						return false;
-						break;
-
-					}
+					break;
 				}
 
-				return true;
-			}
-			
-			int GetFileCountInZip()
-			{
-				return (int)m_FilesInZip.size();
+				case 0x02014b50: //Central directory file header
+				{
+					if (!LoadCentralDirectoryFileHeader())
+						return false;
+					break;
+				}
+
+				case 0x06054b50: //End of file header
+					if (!LoadEnd())
+						return false;
+					break;
+
+				default:
+					return false;
+					break;
+
+				}
 			}
 
-			FileInZip* GetFile(std::string a_Name)
-			{
-				auto temp = m_FilesInZip.find(a_Name);
+			return true;
+		}
 
-				if (temp == m_FilesInZip.end())
-					return nullptr;
+		int GetFileCountInZip()
+		{
+			return (int)m_FilesInZip.size();
+		}
 
-				return temp->second.get();
-			}
+		FileInZip* GetFile(std::string a_Name)
+		{
+			auto temp = m_FilesInZip.find(a_Name);
+
+			if (temp == m_FilesInZip.end())
+				return nullptr;
+
+			return temp->second.get();
+		}
 	};
 
 	//----------------------------------------------------------
