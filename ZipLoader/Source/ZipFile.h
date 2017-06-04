@@ -117,6 +117,8 @@ namespace GrumpyZip
 	//----------------------------------------------------------
 	// FILEINZIP END
 
+
+
 	//MAIN ZIP FILE
 	//----------------------------------------------------------
 
@@ -137,219 +139,242 @@ namespace GrumpyZip
 		unsigned int m_FileCursorPos = 0;
 		unsigned int CompleteFileSize = 0;
 
-		bool LoadLocalFileHeader()
+		//Functions---------------------------------------------------------------------
+
+		//Loads the Local File Header
+		//
+		bool LoadLocalFileHeader();
+
+		//Loads the Central Header
+		//
+		bool LoadCentralDirectoryFileHeader();
+
+		//Loads the End of file header
+		//
+		bool LoadEnd();
+
+	public:
+
+		//Loads a zip file from the given location and decompresses them directly.
+		//
+		bool LoadZipFile(std::string a_FileLocation);
+
+		int GetFileCountInZip()		{			return (int)m_FilesInZip.size();		}
+
+		FileInZip* GetFile(std::string a_Name);
+	};
+
+	//----------------------------------------------------------
+	//MAIN ZIP FILE 
+
+
+
+	//
+	//-------------------------------------- DEFINITIONS --------------------------------------//
+	//
+
+
+
+	bool ZipFile::LoadLocalFileHeader()
+	{
+		//Get the header
+		m_LocalFileHeader = (LocalZipHeader*)&m_Bigbuffer[m_FileCursorPos];
+
+		if (m_LocalFileHeader->UncompressedSize != 0)
 		{
-			//Get the header
-			m_LocalFileHeader = (LocalZipHeader*)&m_Bigbuffer[m_FileCursorPos];
-
-			if (m_LocalFileHeader->UncompressedSize != 0)
+			//Check which method of compressionwas used (we only support 8 which means deflate first)
+			if (m_LocalFileHeader->CompressionMethod != 0)
 			{
-				//Check which method of compressionwas used (we only support 8 which means deflate first)
-				if (m_LocalFileHeader->CompressionMethod != 0)
+				//Only deflate compression/decompression first
+				if (m_LocalFileHeader->CompressionMethod != ECompressionMethods::Deflated)
 				{
-					//Only deflate compression/decompression first
-					if (m_LocalFileHeader->CompressionMethod != ECompressionMethods::Deflated)
-					{
-						printf("Compression method [%i] is not supported\n", m_LocalFileHeader->CompressionMethod);
-						return false;
-					}
-					else
-					{
-						std::vector<char> tempName;
-						tempName.resize(m_LocalFileHeader->FileNameLength + 1);
-
-						//Copy the name..
-						memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 30], m_LocalFileHeader->FileNameLength);
-
-						std::vector<unsigned char> compressedData;
-						compressedData.resize(m_LocalFileHeader->CompressedSize);
-						memset(compressedData.data(), 0, m_LocalFileHeader->CompressedSize);
-
-						memcpy(compressedData.data(),
-							&m_Bigbuffer[m_FileCursorPos + sizeof(LocalZipHeader) + m_LocalFileHeader->ExtraFieldLength + m_LocalFileHeader->FileNameLength],
-							m_LocalFileHeader->CompressedSize);
-
-						std::vector<unsigned char> decompressedData;
-
-						decompressedData.resize(m_LocalFileHeader->UncompressedSize + 1);
-
-						z_stream stream;
-						stream.zalloc = Z_NULL;
-						stream.zfree = Z_NULL;
-						stream.opaque = Z_NULL;
-						stream.avail_in = 0;
-						stream.next_in = Z_NULL;
-
-						if (int err = inflateInit2(&stream, -MAX_WBITS) != Z_OK)
-						{
-							printf("Error: inflateInit %d\n", err);
-							return false;
-						}
-
-						// Set the starting point and total data size to be read
-						stream.avail_in = (uInt)compressedData.size();
-						stream.next_in = (Bytef*)&compressedData[0];
-
-						stream.next_out = (Bytef*)&decompressedData[0];
-
-						int ret = inflate(&stream, Z_NO_FLUSH);
-
-						if (ret != Z_STREAM_END)
-						{
-							printf("Error: inflate %d\n", ret);
-							return false;
-						}
-
-						auto tempFile = std::make_unique<FileInZip>();
-						tempFile->Data = decompressedData;
-						tempFile->FileName = std::string(tempName.data());
-						tempFile->FileSize = m_LocalFileHeader->UncompressedSize;
-
-						m_FilesInZip.insert({ std::string(tempName.data()), std::move(tempFile) });
-					}
+					printf("Compression method [%i] is not supported\n", m_LocalFileHeader->CompressionMethod);
+					return false;
 				}
 				else
 				{
-					//No compression was used .. we can just copy the data
 					std::vector<char> tempName;
 					tempName.resize(m_LocalFileHeader->FileNameLength + 1);
 
 					//Copy the name..
 					memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 30], m_LocalFileHeader->FileNameLength);
 
-					std::vector<unsigned char> data;
-					data.resize(m_LocalFileHeader->CompressedSize + 1);
-					memset(data.data(), 0, m_LocalFileHeader->CompressedSize);
+					std::vector<unsigned char> compressedData;
+					compressedData.resize(m_LocalFileHeader->CompressedSize);
+					memset(compressedData.data(), 0, m_LocalFileHeader->CompressedSize);
 
-					memcpy(data.data(),
+					memcpy(compressedData.data(),
 						&m_Bigbuffer[m_FileCursorPos + sizeof(LocalZipHeader) + m_LocalFileHeader->ExtraFieldLength + m_LocalFileHeader->FileNameLength],
 						m_LocalFileHeader->CompressedSize);
 
+					std::vector<unsigned char> decompressedData;
+
+					decompressedData.resize(m_LocalFileHeader->UncompressedSize + 1);
+
+					z_stream stream;
+					stream.zalloc = Z_NULL;
+					stream.zfree = Z_NULL;
+					stream.opaque = Z_NULL;
+					stream.avail_in = 0;
+					stream.next_in = Z_NULL;
+
+					if (int err = inflateInit2(&stream, -MAX_WBITS) != Z_OK)
+					{
+						printf("Error: inflateInit %d\n", err);
+						return false;
+					}
+
+					// Set the starting point and total data size to be read
+					stream.avail_in = (uInt)compressedData.size();
+					stream.next_in = (Bytef*)&compressedData[0];
+
+					stream.next_out = (Bytef*)&decompressedData[0];
+
+					int ret = inflate(&stream, Z_NO_FLUSH);
+
+					if (ret != Z_STREAM_END)
+					{
+						printf("Error: inflate %d\n", ret);
+						return false;
+					}
+
 					auto tempFile = std::make_unique<FileInZip>();
-					tempFile->Data = data;
+					tempFile->Data = decompressedData;
 					tempFile->FileName = std::string(tempName.data());
 					tempFile->FileSize = m_LocalFileHeader->UncompressedSize;
 
 					m_FilesInZip.insert({ std::string(tempName.data()), std::move(tempFile) });
 				}
 			}
-
-			//Moving the file pointer..
-			m_FileCursorPos += sizeof(LocalZipHeader) + m_LocalFileHeader->FileNameLength + m_LocalFileHeader->CompressedSize + m_LocalFileHeader->ExtraFieldLength;
-
-			return true;
-		}
-
-		bool LoadCentralDirectoryFileHeader()
-		{
-			m_CentralZipHeader = (CentralZipHeader*)&m_Bigbuffer[m_FileCursorPos];
-
-			std::vector<char> tempName;
-			tempName.resize(m_CentralZipHeader->FileNameLength);
-			//Copy the name..
-			memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 46], m_CentralZipHeader->FileNameLength);
-
-			//printf("%s\n", tempName.data());
-
-			//Moving the file pointer..
-			m_FileCursorPos += sizeof(CentralZipHeader) + m_CentralZipHeader->FileNameLength + m_CentralZipHeader->ExtraFieldLength + m_CentralZipHeader->FileCommentLength;
-
-			return true;
-		}
-
-		//Loads the End of file header
-		bool LoadEnd()
-		{
-			m_EndZipHeader = (EndZipHeader*)&m_Bigbuffer[m_FileCursorPos];
-
-			m_FileCursorPos += sizeof(EndZipHeader) + m_EndZipHeader->CommentLength;
-			return true;
-		}
-
-	public:
-
-		//Loads a zip file from the given location
-		bool LoadZipFile(std::string a_FileLocation)
-		{
-			//Open the file
-			std::ifstream file(a_FileLocation, std::ios::ate | std::ifstream::binary);
-			if (!file)
+			else
 			{
-				printf("Error file not found\n");
-				return false;
+				//No compression was used .. we can just copy the data
+				std::vector<char> tempName;
+				tempName.resize(m_LocalFileHeader->FileNameLength + 1);
+
+				//Copy the name..
+				memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 30], m_LocalFileHeader->FileNameLength);
+
+				std::vector<unsigned char> data;
+				data.resize(m_LocalFileHeader->CompressedSize + 1);
+				memset(data.data(), 0, m_LocalFileHeader->CompressedSize);
+
+				memcpy(data.data(),
+					&m_Bigbuffer[m_FileCursorPos + sizeof(LocalZipHeader) + m_LocalFileHeader->ExtraFieldLength + m_LocalFileHeader->FileNameLength],
+					m_LocalFileHeader->CompressedSize);
+
+				auto tempFile = std::make_unique<FileInZip>();
+				tempFile->Data = data;
+				tempFile->FileName = std::string(tempName.data());
+				tempFile->FileSize = m_LocalFileHeader->UncompressedSize;
+
+				m_FilesInZip.insert({ std::string(tempName.data()), std::move(tempFile) });
 			}
+		}
 
-			//Get the file size
-			CompleteFileSize = (int)file.tellg();
-			if (CompleteFileSize == 0)
+		//Moving the file pointer..
+		m_FileCursorPos += sizeof(LocalZipHeader) + m_LocalFileHeader->FileNameLength + m_LocalFileHeader->CompressedSize + m_LocalFileHeader->ExtraFieldLength;
+
+		return true;
+	}
+
+	bool ZipFile::LoadCentralDirectoryFileHeader()
+	{
+		m_CentralZipHeader = (CentralZipHeader*)&m_Bigbuffer[m_FileCursorPos];
+
+		std::vector<char> tempName;
+		tempName.resize(m_CentralZipHeader->FileNameLength);
+		//Copy the name..
+		memcpy(tempName.data(), &m_Bigbuffer[m_FileCursorPos + 46], m_CentralZipHeader->FileNameLength);
+
+		//printf("%s\n", tempName.data());
+
+		//Moving the file pointer..
+		m_FileCursorPos += sizeof(CentralZipHeader) + m_CentralZipHeader->FileNameLength + m_CentralZipHeader->ExtraFieldLength + m_CentralZipHeader->FileCommentLength;
+
+		return true;
+	}
+
+	bool ZipFile::LoadEnd()
+	{
+		m_EndZipHeader = (EndZipHeader*)&m_Bigbuffer[m_FileCursorPos];
+
+		m_FileCursorPos += sizeof(EndZipHeader) + m_EndZipHeader->CommentLength;
+		return true;
+	}
+
+	bool ZipFile::LoadZipFile(std::string a_FileLocation)
+	{
+		//Open the file
+		std::ifstream file(a_FileLocation, std::ios::ate | std::ifstream::binary);
+		if (!file)
+		{
+			printf("Error file not found\n");
+			return false;
+		}
+
+		//Get the file size
+		CompleteFileSize = (int)file.tellg();
+		if (CompleteFileSize == 0)
+		{
+			printf("Error filesize is zero\n");
+			return false;
+		}
+
+		//Reset the file pointer to 0
+		file.seekg(0);
+
+		//Take a big buffer for loading everything
+		m_Bigbuffer.resize(CompleteFileSize);
+		memset(m_Bigbuffer.data(), 0, CompleteFileSize);
+
+		file.read(m_Bigbuffer.data(), CompleteFileSize);
+
+		while (m_FileCursorPos < CompleteFileSize)
+		{
+			//TODO find another way than this
+			HeaderSignature *signature = (HeaderSignature*)&m_Bigbuffer[m_FileCursorPos];
+
+			switch (signature->Signature)
 			{
-				printf("Error filesize is zero\n");
-				return false;
-			}
-
-			//Reset the file pointer to 0
-			file.seekg(0);
-
-			//Take a big buffer for loading everything
-			m_Bigbuffer.resize(CompleteFileSize);
-			memset(m_Bigbuffer.data(), 0, CompleteFileSize);
-
-			file.read(m_Bigbuffer.data(), CompleteFileSize);
-
-			while (m_FileCursorPos < CompleteFileSize)
+			case 0x04034b50: //Local file header
 			{
-				//TODO find another way than this
-				HeaderSignature *signature = (HeaderSignature*)&m_Bigbuffer[m_FileCursorPos];
-
-				switch (signature->Signature)
-				{
-				case 0x04034b50: //Local file header
-				{
-					if (!LoadLocalFileHeader())
-						return false;
-					break;
-				}
-
-				case 0x02014b50: //Central directory file header
-				{
-					if (!LoadCentralDirectoryFileHeader())
-						return false;
-					break;
-				}
-
-				case 0x06054b50: //End of file header
-					if (!LoadEnd())
-						return false;
-					break;
-
-				default:
+				if (!LoadLocalFileHeader())
 					return false;
-					break;
-
-				}
+				break;
 			}
 
-			return true;
+			case 0x02014b50: //Central directory file header
+			{
+				if (!LoadCentralDirectoryFileHeader())
+					return false;
+				break;
+			}
+
+			case 0x06054b50: //End of file header
+				if (!LoadEnd())
+					return false;
+				break;
+
+			default:
+				return false;
+				break;
+
+			}
 		}
 
-		int GetFileCountInZip()
-		{
-			return (int)m_FilesInZip.size();
-		}
+		return true;
+	}
 
-		FileInZip* GetFile(std::string a_Name)
-		{
-			auto temp = m_FilesInZip.find(a_Name);
+	FileInZip* ZipFile::GetFile(std::string a_Name)
+	{
+		auto temp = m_FilesInZip.find(a_Name);
 
-			if (temp == m_FilesInZip.end())
-				return nullptr;
+		if (temp == m_FilesInZip.end())
+			return nullptr;
 
-			return temp->second.get();
-		}
-	};
-
-	//----------------------------------------------------------
-	//MAIN ZIP FILE END
+		return temp->second.get();
+	}
 }
 
 //----------------------------------------------------------
